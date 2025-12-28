@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>M60 Terminal: Updated SE Corner</title>
+    <title>M60-SBS at 106th Street</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root { 
@@ -19,9 +19,8 @@
         body { font-family: -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; }
         .app { width: 100%; max-width: 500px; background: var(--card-bg); border-radius: 16px; border: 1px solid #30363d; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
         
-        .header { background: #0d1117; padding: 20px; text-align: center; border-bottom: 1px solid #30363d; }
-        .header h1 { margin: 0; font-size: 1.4rem; color: var(--mta-blue); }
-        .header p { margin: 5px 0 0; font-size: 0.8rem; color: var(--text-dim); }
+        .header { background: #0d1117; padding: 12px 10px; text-align: center; border-bottom: 1px solid #30363d; }
+        .header h1 { margin: 0; font-size: 1.2rem; color: var(--mta-blue); font-weight: 700; }
 
         #map { height: 350px; width: 100%; background: #000; border-bottom: 1px solid #30363d; }
         
@@ -53,8 +52,7 @@
 
 <div class="app">
     <div class="header">
-        <h1>M60-SBS Tracker</h1>
-        <p>SE Corner: Broadway & W 106th St</p>
+        <h1>M60-SBS at 106th Street</h1>
     </div>
 
     <div id="map"></div>
@@ -65,7 +63,7 @@
     <div class="section-label">Upcoming Departures</div>
     <div id="upcoming-container"></div>
 
-    <div class="footer" id="status">Location Updated to SE Corner • Syncing...</div>
+    <div class="footer" id="status">Syncing...</div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -74,8 +72,8 @@
     const DEP_STOP = '403117'; 
     const ARR_STOP = '404131'; 
     
-    // UPDATED: Southeast corner of Broadway and W 106th St (Matching your red dot)
-    const TERM_POS = [40.80152, -73.9674];
+    // UPDATED COORDINATES
+    const TERM_POS = [40.80161632907086, -73.96762013036808];
 
     let map, busLayer;
     let markers = {}; 
@@ -89,14 +87,14 @@
             maxZoom: 20
         }).addTo(map);
         
-        // High-contrast Blue dot for the SE corner Terminal
+        // Terminal Marker
         L.circleMarker(TERM_POS, { 
             radius: 8, 
             fillColor: "#216aff", 
             color: "#fff", 
             weight: 3, 
             fillOpacity: 1 
-        }).addTo(map).bindPopup("M60 Stand: SE Corner");
+        }).addTo(map);
         
         busLayer = L.layerGroup().addTo(map);
         update();
@@ -137,6 +135,7 @@
 
             nextBusId = busList.length > 0 ? busList[0].id : null;
 
+            // Saturday Schedule Padding (12 min)
             if (busList.length < 4) {
                 let lastT = busList.length > 0 ? busList[busList.length-1].time : now;
                 while (busList.length < 4) {
@@ -147,7 +146,7 @@
 
             const currentTopId = visits[0]?.MonitoredVehicleJourney?.VehicleRef;
             if (lastTopBusId && currentTopId && lastTopBusId !== currentTopId) {
-                localStorage.setItem('m60_dark_left', JSON.stringify({
+                localStorage.setItem('m60_final_left', JSON.stringify({
                     id: lastTopBusId.split('_')[1],
                     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                 }));
@@ -171,7 +170,7 @@
                     </div>`;
             });
 
-            const departed = JSON.parse(localStorage.getItem('m60_dark_left'));
+            const departed = JSON.parse(localStorage.getItem('m60_final_left'));
             left.innerHTML = departed ? `
                 <div class="bus-row just-left">
                     <div class="info"><span class="loc">En Route to LGA</span><span class="meta">#${departed.id}</span></div>
