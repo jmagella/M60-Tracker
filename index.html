@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>M60-SBS at 106th Street</title>
+    <title>M60-SBS Tracker v1.0</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root { 
@@ -19,14 +19,23 @@
         body { font-family: -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; }
         .app { width: 100%; max-width: 500px; background: var(--card-bg); border-radius: 16px; border: 1px solid #30363d; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
         
-        .header { background: #0d1117; padding: 12px 10px; text-align: center; border-bottom: 1px solid #30363d; }
-        .header h1 { margin: 0; font-size: 1.2rem; color: var(--mta-blue); font-weight: 700; }
+        .header { background: #0d1117; padding: 15px 10px; text-align: center; border-bottom: 1px solid #30363d; }
+        .header h1 { margin: 0; font-size: 1.4rem; color: #ffffff; font-weight: 700; }
 
         #map { height: 350px; width: 100%; background: #000; border-bottom: 1px solid #30363d; }
         
         .section-label { background: #0d1117; padding: 10px 15px; font-size: 0.7rem; font-weight: 800; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
 
-        .bus-row { display: flex; justify-content: space-between; align-items: center; padding: 15px; border-bottom: 1px solid #30363d; }
+        .bus-row { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            padding: 15px; 
+            border-bottom: 1px solid #30363d; 
+            cursor: pointer; 
+            transition: background 0.2s;
+        }
+        .bus-row:hover { background: #1c2128; }
         .bus-row.just-left { background: #1c1910; border-left: 4px solid var(--next-gold); opacity: 0.8; }
         
         .info { display: flex; flex-direction: column; gap: 4px; }
@@ -60,10 +69,10 @@
     <div class="section-label">Just Departed</div>
     <div id="left-container"></div>
 
-    <div class="section-label">Upcoming Departures</div>
+    <div class="section-label">Upcoming Departures (Click to View)</div>
     <div id="upcoming-container"></div>
 
-    <div class="footer" id="status">Syncing...</div>
+    <div class="footer" id="status">Version 1.0 • Syncing Live Data...</div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -71,8 +80,6 @@
     const API_KEY = '69054e94-eb0e-4073-8f0e-63e9899cc2a5';
     const DEP_STOP = '403117'; 
     const ARR_STOP = '404131'; 
-    
-    // UPDATED COORDINATES
     const TERM_POS = [40.80161632907086, -73.96762013036808];
 
     let map, busLayer;
@@ -81,24 +88,27 @@
     let lastTopBusId = null;
 
     function init() {
-        map = L.map('map', { zoomControl: false }).setView(TERM_POS, 18);
+        map = L.map('map', { zoomControl: false }).setView(TERM_POS, 17);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 20 }).addTo(map);
         
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            maxZoom: 20
-        }).addTo(map);
-        
-        // Terminal Marker
-        L.circleMarker(TERM_POS, { 
-            radius: 8, 
-            fillColor: "#216aff", 
-            color: "#fff", 
-            weight: 3, 
-            fillOpacity: 1 
-        }).addTo(map);
-        
+        L.circleMarker(TERM_POS, { radius: 8, fillColor: "#216aff", color: "#fff", weight: 3, fillOpacity: 1 }).addTo(map);
         busLayer = L.layerGroup().addTo(map);
+        
         update();
         setInterval(update, 30000);
+    }
+
+    function focusBus(id) {
+        if (markers[id]) {
+            const busPos = markers[id].getLatLng();
+            const bounds = L.latLngBounds([TERM_POS, busPos]);
+            map.fitBounds(bounds, { padding: [60, 60], maxZoom: 18 });
+            markers[id].openTooltip();
+        } else if (id === "Sched") {
+            alert("No live location for scheduled bus.");
+        } else {
+            map.setView(TERM_POS, 17);
+        }
     }
 
     function update() {
@@ -135,7 +145,6 @@
 
             nextBusId = busList.length > 0 ? busList[0].id : null;
 
-            // Saturday Schedule Padding (12 min)
             if (busList.length < 4) {
                 let lastT = busList.length > 0 ? busList[busList.length-1].time : now;
                 while (busList.length < 4) {
@@ -158,7 +167,7 @@
                 const diff = Math.round((bus.time - now) / 60000);
                 const isNext = (index === 0 && bus.live);
                 upcoming.innerHTML += `
-                    <div class="bus-row">
+                    <div class="bus-row" onclick="focusBus('${bus.id}')">
                         <div class="info">
                             <span class="loc ${isNext ? 'next-highlight' : ''}">${isNext ? '★ NEXT: ' : ''}${bus.loc}</span>
                             <span class="meta"><span class="tag ${bus.live?'tag-live':'tag-sched'}">${bus.live?'Live':'Sched'}</span>#${bus.id}</span>
@@ -172,7 +181,7 @@
 
             const departed = JSON.parse(localStorage.getItem('m60_final_left'));
             left.innerHTML = departed ? `
-                <div class="bus-row just-left">
+                <div class="bus-row just-left" onclick="focusBus('${departed.id}')">
                     <div class="info"><span class="loc">En Route to LGA</span><span class="meta">#${departed.id}</span></div>
                     <div class="times"><div class="countdown" style="color:var(--text-dim)">LEFT</div><div class="sched">${departed.time}</div></div>
                 </div>` : '<div style="padding:15px; font-size:0.7rem; color:var(--text-dim)">Awaiting departure...</div>';
