@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>M60 Terminal: Updated SE Corner</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root { 
+            --bg: #0a0c10; 
+            --card-bg: #161b22; 
+            --mta-blue: #216aff; 
+            --mta-red: #ff4d4d; 
+            --text: #e6edf3; 
+            --text-dim: #8b949e; 
+            --next-gold: #f1c40f;
+        }
+        
+        body { font-family: -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 10px; display: flex; flex-direction: column; align-items: center; }
+        .app { width: 100%; max-width: 500px; background: var(--card-bg); border-radius: 16px; border: 1px solid #30363d; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+        
+        .header { background: #0d1117; padding: 20px; text-align: center; border-bottom: 1px solid #30363d; }
+        .header h1 { margin: 0; font-size: 1.4rem; color: var(--mta-blue); }
+        .header p { margin: 5px 0 0; font-size: 0.8rem; color: var(--text-dim); }
+
+        #map { height: 350px; width: 100%; background: #000; border-bottom: 1px solid #30363d; }
+        
+        .section-label { background: #0d1117; padding: 10px 15px; font-size: 0.7rem; font-weight: 800; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
+
+        .bus-row { display: flex; justify-content: space-between; align-items: center; padding: 15px; border-bottom: 1px solid #30363d; }
+        .bus-row.just-left { background: #1c1910; border-left: 4px solid var(--next-gold); opacity: 0.8; }
+        
+        .info { display: flex; flex-direction: column; gap: 4px; }
+        .loc { font-weight: 600; font-size: 0.95rem; color: var(--text); }
+        .meta { font-size: 0.75rem; color: var(--text-dim); font-family: 'SF Mono', monospace; }
+        
+        .times { text-align: right; }
+        .countdown { font-size: 1.3rem; font-weight: 800; color: var(--mta-red); }
+        .sched { font-size: 0.8rem; color: var(--text-dim); margin-top: 4px; }
+
+        .tag { padding: 2px 5px; border-radius: 4px; font-size: 0.6rem; font-weight: bold; margin-right: 5px; text-transform: uppercase; }
+        .tag-live { background: rgba(255, 77, 77, 0.15); color: var(--mta-red); border: 1px solid var(--mta-red); }
+        .tag-sched { background: #30363d; color: var(--text-dim); border: 1px solid #444; }
+
+        .next-highlight { color: var(--next-gold) !important; }
+        .footer { padding: 12px; text-align: center; font-size: 0.65rem; color: var(--text-dim); background: #0d1117; }
+
+        .bus-label { background: transparent; border: none; box-shadow: none; font-weight: bold; color: #fff; text-shadow: 1px 1px 3px #000; font-size: 11px; }
+        .next-bus-label { color: var(--next-gold); font-size: 13px; text-transform: uppercase; text-shadow: 1px 1px 5px #000; }
+    </style>
+</head>
+<body>
+
+<div class="app">
+    <div class="header">
+        <h1>M60-SBS Tracker</h1>
+        <p>SE Corner: Broadway & W 106th St</p>
+    </div>
+
+    <div id="map"></div>
+
+    <div class="section-label">Just Departed</div>
+    <div id="left-container"></div>
+
+    <div class="section-label">Upcoming Departures</div>
+    <div id="upcoming-container"></div>
+
+    <div class="footer" id="status">Location Updated to SE Corner • Syncing...</div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    const API_KEY = '69054e94-eb0e-4073-8f0e-63e9899cc2a5';
+    const DEP_STOP = '403117'; 
+    const ARR_STOP = '404131'; 
+    
+    // UPDATED: Southeast corner of Broadway and W 106th St (Matching your red dot)
+    const TERM_POS = [40.80152, -73.9674];
+
+    let map, busLayer;
+    let markers = {}; 
+    let nextBusId = null;
+    let lastTopBusId = null;
+
+    function init() {
+        map = L.map('map', { zoomControl: false }).setView(TERM_POS, 18);
+        
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            maxZoom: 20
+        }).addTo(map);
+        
+        // High-contrast Blue dot for the SE corner Terminal
+        L.circleMarker(TERM_POS, { 
+            radius: 8, 
+            fillColor: "#216aff", 
+            color: "#fff", 
+            weight: 3, 
+            fillOpacity: 1 
+        }).addTo(map).bindPopup("M60 Stand: SE Corner");
+        
+        busLayer = L.layerGroup().addTo(map);
+        update();
+        setInterval(update, 30000);
+    }
+
+    function update() {
+        fetchJSONP(`https://bustime.mta.info/api/siri/stop-monitoring.json?key=${API_KEY}&MonitoringRef=${DEP_STOP}&callback=processData`);
+        fetchJSONP(`https://bustime.mta.info/api/siri/stop-monitoring.json?key=${API_KEY}&MonitoringRef=${ARR_STOP}&callback=processMapOnly`);
+    }
+
+    function fetchJSONP(url) {
+        const s = document.createElement('script');
+        s.src = url;
+        document.body.appendChild(s);
+        document.body.removeChild(s);
+    }
+
+    window.processData = function(data) {
+        const upcoming = document.getElementById('upcoming-container');
+        const left = document.getElementById('left-container');
+        const now = new Date();
+        
+        try {
+            const visits = data.Siri.ServiceDelivery.StopMonitoringDelivery[0].MonitoredStopVisit || [];
+            let busList = [];
+
+            visits.forEach(v => {
+                const j = v.MonitoredVehicleJourney;
+                busList.push({
+                    id: j.VehicleRef.split('_')[1],
+                    time: new Date(j.MonitoredCall.ExpectedDepartureTime || j.MonitoredCall.AimedDepartureTime),
+                    live: j.Monitored,
+                    loc: j.MonitoredCall.StopPointName || "Terminal",
+                    latlng: j.VehicleLocation ? [j.VehicleLocation.Latitude, j.VehicleLocation.Longitude] : null
+                });
+            });
+
+            nextBusId = busList.length > 0 ? busList[0].id : null;
+
+            if (busList.length < 4) {
+                let lastT = busList.length > 0 ? busList[busList.length-1].time : now;
+                while (busList.length < 4) {
+                    lastT = new Date(lastT.getTime() + 12 * 60000);
+                    busList.push({ id: "Sched", time: lastT, live: false, loc: "Per Schedule", latlng: null });
+                }
+            }
+
+            const currentTopId = visits[0]?.MonitoredVehicleJourney?.VehicleRef;
+            if (lastTopBusId && currentTopId && lastTopBusId !== currentTopId) {
+                localStorage.setItem('m60_dark_left', JSON.stringify({
+                    id: lastTopBusId.split('_')[1],
+                    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                }));
+            }
+            lastTopBusId = currentTopId;
+
+            upcoming.innerHTML = '';
+            busList.slice(0, 4).forEach((bus, index) => {
+                const diff = Math.round((bus.time - now) / 60000);
+                const isNext = (index === 0 && bus.live);
+                upcoming.innerHTML += `
+                    <div class="bus-row">
+                        <div class="info">
+                            <span class="loc ${isNext ? 'next-highlight' : ''}">${isNext ? '★ NEXT: ' : ''}${bus.loc}</span>
+                            <span class="meta"><span class="tag ${bus.live?'tag-live':'tag-sched'}">${bus.live?'Live':'Sched'}</span>#${bus.id}</span>
+                        </div>
+                        <div class="times">
+                            <div class="countdown" style="color:${isNext ? 'var(--next-gold)' : (bus.live ? '' : '#555')}">${diff <= 0 ? 'AT STOP' : diff + 'm'}</div>
+                            <div class="sched">${bus.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                        </div>
+                    </div>`;
+            });
+
+            const departed = JSON.parse(localStorage.getItem('m60_dark_left'));
+            left.innerHTML = departed ? `
+                <div class="bus-row just-left">
+                    <div class="info"><span class="loc">En Route to LGA</span><span class="meta">#${departed.id}</span></div>
+                    <div class="times"><div class="countdown" style="color:var(--text-dim)">LEFT</div><div class="sched">${departed.time}</div></div>
+                </div>` : '<div style="padding:15px; font-size:0.7rem; color:var(--text-dim)">Awaiting departure...</div>';
+
+            updateMarkers(busList);
+            document.getElementById('status').innerText = "Last Sync: " + now.toLocaleTimeString();
+        } catch(e) { console.error(e); }
+    }
+
+    window.processMapOnly = function(data) {
+        try {
+            const visits = data.Siri.ServiceDelivery.StopMonitoringDelivery[0].MonitoredStopVisit || [];
+            let mapBuses = visits.map(v => ({
+                id: v.MonitoredVehicleJourney.VehicleRef.split('_')[1],
+                latlng: v.MonitoredVehicleJourney.VehicleLocation ? 
+                        [v.MonitoredVehicleJourney.VehicleLocation.Latitude, v.MonitoredVehicleJourney.VehicleLocation.Longitude] : null
+            }));
+            updateMarkers(mapBuses);
+        } catch(e) {}
+    }
+
+    function updateMarkers(busData) {
+        busData.forEach(bus => {
+            if (!bus.latlng) return;
+            const isNext = (bus.id === nextBusId);
+            
+            if (markers[bus.id]) {
+                markers[bus.id].setLatLng(bus.latlng);
+                markers[bus.id].getTooltip().setContent(isNext ? "NEXT BUS" : "#" + bus.id);
+                markers[bus.id].setStyle({ 
+                    fillColor: isNext ? "var(--next-gold)" : "var(--mta-red)",
+                    radius: isNext ? 12 : 8
+                });
+                if (isNext) markers[bus.id].getTooltip().setClassName('bus-label next-bus-label');
+            } else {
+                markers[bus.id] = L.circleMarker(bus.latlng, {
+                    radius: isNext ? 12 : 8, 
+                    fillColor: isNext ? "var(--next-gold)" : "var(--mta-red)", 
+                    color: "#fff", 
+                    weight: 2, 
+                    fillOpacity: 1
+                }).addTo(busLayer).bindTooltip(isNext ? "NEXT BUS" : "#" + bus.id, { 
+                    permanent: true, 
+                    direction: 'top', 
+                    className: isNext ? 'bus-label next-bus-label' : 'bus-label' 
+                });
+            }
+            markers[bus.id]._lastSeen = Date.now();
+        });
+
+        for (let id in markers) {
+            if (Date.now() - markers[id]._lastSeen > 60000) {
+                busLayer.removeLayer(markers[id]);
+                delete markers[id];
+            }
+        }
+    }
+
+    window.onload = init;
+</script>
+</body>
+</html>
